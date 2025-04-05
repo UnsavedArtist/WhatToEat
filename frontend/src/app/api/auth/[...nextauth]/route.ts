@@ -3,16 +3,21 @@ import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
 
-const isLocalTesting = process.env.NEXT_PUBLIC_IS_LOCAL_TESTING === 'true';
-const baseUrl = isLocalTesting ? 'http://localhost:3000' : 'https://www.what2eat.pro';
+const isDevelopment = process.env.NODE_ENV === 'development';
+const baseUrl = isDevelopment ? 'http://localhost:3000' : 'https://www.what2eat.pro';
 
 const handler = NextAuth({
-  debug: true, // Enable debug mode to see what's happening
+  debug: isDevelopment, // Only enable debug in development
   adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      authorization: {
+        params: {
+          prompt: "select_account"
+        }
+      }
     }),
   ],
   secret: process.env.NEXTAUTH_SECRET,
@@ -22,22 +27,38 @@ const handler = NextAuth({
   },
   callbacks: {
     async signIn({ user, account, profile }) {
-      console.log('Sign in callback:', { user, account, profile });
+      if (isDevelopment) {
+        console.log('Sign in callback:', { user, account, profile });
+      }
+      if (!user?.email) {
+        return false;
+      }
       return true;
     },
     async redirect({ url, baseUrl }) {
-      console.log('Redirect callback:', { url, baseUrl });
-      return url.startsWith(baseUrl) ? url : baseUrl;
+      if (isDevelopment) {
+        console.log('Redirect callback:', { url, baseUrl });
+      }
+      // Allows relative callback URLs
+      if (url.startsWith("/")) return `${baseUrl}${url}`
+      // Allow redirects to both development and production domains
+      if (url.startsWith('http://localhost:3000') && isDevelopment) return url
+      if (url.startsWith('https://www.what2eat.pro') && !isDevelopment) return url
+      return baseUrl
     },
     async session({ session, token }) {
-      console.log('Session callback:', { session, token });
+      if (isDevelopment) {
+        console.log('Session callback:', { session, token });
+      }
       if (session.user && token.sub) {
         session.user.id = token.sub;
       }
       return session;
     },
     async jwt({ token, user, account }) {
-      console.log('JWT callback:', { token, user, account });
+      if (isDevelopment) {
+        console.log('JWT callback:', { token, user, account });
+      }
       if (user) {
         token.id = user.id;
       }
@@ -50,10 +71,14 @@ const handler = NextAuth({
   },
   events: {
     async signIn({ user, account, profile, isNewUser }) {
-      console.log('Sign in success:', { user, account, isNewUser });
+      if (isDevelopment) {
+        console.log('Sign in success:', { user, account, isNewUser });
+      }
     },
     async signOut({ session, token }) {
-      console.log('Sign out success:', { session, token });
+      if (isDevelopment) {
+        console.log('Sign out success:', { session, token });
+      }
     },
   },
 });
