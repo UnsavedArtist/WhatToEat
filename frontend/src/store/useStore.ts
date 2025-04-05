@@ -11,7 +11,7 @@ interface Restaurant {
   location: Location;
   address: string;
   rating: number;
-  priceLevel: string;
+  priceLevel: number;
   cuisine: string[];
   isOpen: boolean;
 }
