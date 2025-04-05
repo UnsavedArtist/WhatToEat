@@ -3,17 +3,19 @@
 import { signIn } from 'next-auth/react';
 import { FaGoogle } from 'react-icons/fa';
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false);
-  const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  const error = searchParams.get('error');
 
   const handleSignIn = async () => {
     try {
       setIsLoading(true);
-      const result = await signIn('google', {
-        callbackUrl: '/',
+      await signIn('google', {
+        callbackUrl,
         redirect: true,
       });
     } catch (error) {
@@ -33,6 +35,11 @@ export default function SignIn() {
           <p className="mt-2 text-center text-sm text-gray-600">
             Get personalized restaurant recommendations
           </p>
+          {error && (
+            <p className="mt-2 text-center text-sm text-red-600">
+              {error === 'OAuthCallback' ? 'Error signing in with Google. Please try again.' : error}
+            </p>
+          )}
         </div>
         <div className="mt-8 space-y-6">
           <button

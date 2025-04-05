@@ -2,14 +2,12 @@ import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
-import { Session } from "next-auth";
-import { JWT } from "next-auth/jwt";
 
 const isLocalTesting = process.env.NEXT_PUBLIC_IS_LOCAL_TESTING === 'true';
 const baseUrl = isLocalTesting ? 'http://localhost:3000' : 'https://www.what2eat.pro';
 
 const handler = NextAuth({
-  debug: process.env.NODE_ENV === 'development',
+  debug: true, // Enable debug mode to see what's happening
   adapter: PrismaAdapter(prisma),
   providers: [
     GoogleProvider({
@@ -24,18 +22,22 @@ const handler = NextAuth({
   },
   callbacks: {
     async signIn({ user, account, profile }) {
-      if (!user?.email) {
-        return false;
-      }
+      console.log('Sign in callback:', { user, account, profile });
       return true;
     },
+    async redirect({ url, baseUrl }) {
+      console.log('Redirect callback:', { url, baseUrl });
+      return url.startsWith(baseUrl) ? url : baseUrl;
+    },
     async session({ session, token }) {
+      console.log('Session callback:', { session, token });
       if (session.user && token.sub) {
         session.user.id = token.sub;
       }
       return session;
     },
     async jwt({ token, user, account }) {
+      console.log('JWT callback:', { token, user, account });
       if (user) {
         token.id = user.id;
       }
