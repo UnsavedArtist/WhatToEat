@@ -9,7 +9,6 @@ export default function RestaurantFilters() {
   const { filters, setFilters } = useStore();
   const [isOpen, setIsOpen] = useState(false);
 
-  const priceRanges = ['$', '$$', '$$$', '$$$$'];
   const cuisineTypes = [
     'American',
     'Italian',
@@ -61,54 +60,6 @@ export default function RestaurantFilters() {
 
       {isOpen && (
         <div className="space-y-4">
-          <div>
-            <h3 className="font-medium mb-2">Price Range</h3>
-            <div className="flex gap-2">
-              {priceRanges.map((price) => (
-                <button
-                  key={price}
-                  onClick={() =>
-                    setFilters({
-                      ...filters,
-                      priceLevel: filters.priceLevel === price ? null : price,
-                    })
-                  }
-                  className={`px-3 py-1 rounded-full ${
-                    filters.priceLevel === price
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 hover:bg-gray-200'
-                  }`}
-                >
-                  {price}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <h3 className="font-medium mb-2">Cuisine Type</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {cuisineTypes.map((cuisine) => (
-                <button
-                  key={cuisine}
-                  onClick={() =>
-                    setFilters({
-                      ...filters,
-                      cuisineType: filters.cuisineType === cuisine ? null : cuisine,
-                    })
-                  }
-                  className={`px-3 py-1 rounded-full text-sm ${
-                    filters.cuisineType === cuisine
-                      ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 hover:bg-gray-200'
-                  }`}
-                >
-                  {cuisine}
-                </button>
-              ))}
-            </div>
-          </div>
-
           <div className="mb-6">
             <h4 className="font-medium mb-2">Price Range</h4>
             <div className="flex space-x-2">
@@ -127,6 +78,25 @@ export default function RestaurantFilters() {
                     .map((_, i) => (
                       <FaDollarSign key={i} className="text-sm" />
                     ))}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="font-medium mb-2">Cuisine Type</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {cuisineTypes.map((cuisine) => (
+                <button
+                  key={cuisine}
+                  onClick={() => handleCuisineChange(cuisine)}
+                  className={`px-3 py-1 rounded-full text-sm ${
+                    filters.cuisine.includes(cuisine)
+                      ? 'bg-blue-500 text-white'
+                      : 'bg-gray-100 hover:bg-gray-200'
+                  }`}
+                >
+                  {cuisine}
                 </button>
               ))}
             </div>

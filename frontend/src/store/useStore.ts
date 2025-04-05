@@ -17,8 +17,10 @@ interface Restaurant {
 }
 
 interface Filters {
-  priceLevel: string | null;
-  cuisineType: string | null;
+  priceLevel: number[];
+  cuisine: string[];
+  rating: number;
+  openNow: boolean;
 }
 
 interface Store {
@@ -40,8 +42,10 @@ const useStore = create<Store>((set) => ({
   selectedRestaurant: null,
   setSelectedRestaurant: (restaurant) => set({ selectedRestaurant: restaurant }),
   filters: {
-    priceLevel: null,
-    cuisineType: null,
+    priceLevel: [],
+    cuisine: [],
+    rating: 0,
+    openNow: false,
   },
   setFilters: (filters) => set({ filters }),
 }));
