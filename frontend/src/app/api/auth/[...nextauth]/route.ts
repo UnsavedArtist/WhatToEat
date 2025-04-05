@@ -2,6 +2,8 @@ import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import prisma from "@/lib/prisma";
+import { Session } from "next-auth";
+import { JWT } from "next-auth/jwt";
 
 const handler = NextAuth({
   debug: process.env.NODE_ENV === 'development',
@@ -24,13 +26,13 @@ const handler = NextAuth({
       }
       return true;
     },
-    async session({ session, user }) {
+    async session({ session, token }: { session: Session; token: JWT }) {
       if (session.user) {
-        session.user.id = user.id;
+        session.user.id = token.id as string;
       }
       return session;
     },
-    async jwt({ token, user, account, profile }) {
+    async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
       }
@@ -42,14 +44,11 @@ const handler = NextAuth({
     error: '/auth/error',
   },
   events: {
-    async signIn(message) {
-      console.log('Sign in success:', message);
+    async signIn({ user, account, profile, isNewUser }) {
+      console.log('Sign in success:', { user, account, isNewUser });
     },
-    async signOut(message) {
-      console.log('Sign out success:', message);
-    },
-    async error(message) {
-      console.error('Auth error:', message);
+    async signOut({ session, token }) {
+      console.log('Sign out success:', { session, token });
     },
   },
 });
