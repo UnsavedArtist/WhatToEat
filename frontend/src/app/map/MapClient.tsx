@@ -61,6 +61,7 @@ const mapContainerStyle = {
 };
 
 export default function MapClient() {
+  console.log('[DEBUG] MapClient rendering at:', new Date().toISOString());
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
     libraries,
