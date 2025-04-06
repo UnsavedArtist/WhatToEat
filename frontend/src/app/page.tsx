@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { FaUtensils, FaMapMarkedAlt, FaStar } from 'react-icons/fa';
 
 export default function Home() {
@@ -6,6 +7,15 @@ export default function Home() {
     <div className="min-h-screen">
       {/* Hero Section */}
       <section className="text-center py-20 bg-gradient-to-r from-blue-500 to-purple-600">
+        <div className="flex justify-center mb-8">
+          <Image
+            src="/images/W2ELogo.jpg"
+            alt="What To Eat Logo"
+            width={120}
+            height={120}
+            className="rounded-full shadow-xl"
+          />
+        </div>
         <h1 className="text-4xl md:text-6xl font-bold text-white mb-6">
           Discover Your Next Favorite Restaurant
         </h1>
@@ -57,10 +67,14 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="text-center">
-      <div className="flex justify-center mb-4">{icon}</div>
-      <h3 className="text-xl font-semibold mb-2">{title}</h3>
-      <p className="text-gray-600">{description}</p>
+    <div className="text-center p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 border border-gray-100">
+      <div className="flex justify-center mb-4">
+        <div className="p-3 bg-blue-50 rounded-full">
+          {icon}
+        </div>
+      </div>
+      <h3 className="text-xl font-semibold mb-3 text-gray-800">{title}</h3>
+      <p className="text-gray-600 leading-relaxed">{description}</p>
     </div>
   );
 }

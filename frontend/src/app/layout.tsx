@@ -7,6 +7,14 @@ const inter = Inter({ subsets: ['latin'] });
 export const metadata = {
   title: 'What To Eat?',
   description: 'Find your next favorite restaurant',
+  icons: {
+    icon: [
+      {
+        url: '/images/W2ELogo.jpg',
+        type: 'image/jpeg',
+      },
+    ],
+  },
 };
 
 export default function RootLayout({
