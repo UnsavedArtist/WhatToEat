@@ -1,19 +1,9 @@
 import { create } from 'zustand';
+import type { MapRestaurant } from '@/types/map';
 
 interface Location {
   lat: number;
   lng: number;
-}
-
-interface Restaurant {
-  id: string;
-  name: string;
-  location: Location;
-  address: string;
-  rating: number;
-  priceLevel: number;
-  cuisine: string[];
-  isOpen: boolean;
 }
 
 interface Filters {
@@ -26,10 +16,10 @@ interface Filters {
 interface Store {
   currentLocation: Location | null;
   setCurrentLocation: (location: Location) => void;
-  nearbyRestaurants: Restaurant[];
-  setNearbyRestaurants: (restaurants: Restaurant[]) => void;
-  selectedRestaurant: Restaurant | null;
-  setSelectedRestaurant: (restaurant: Restaurant | null) => void;
+  nearbyRestaurants: MapRestaurant[];
+  setNearbyRestaurants: (restaurants: MapRestaurant[] | ((prev: MapRestaurant[]) => MapRestaurant[])) => void;
+  selectedRestaurant: MapRestaurant | null;
+  setSelectedRestaurant: (restaurant: MapRestaurant | null) => void;
   filters: Filters;
   setFilters: (filters: Filters) => void;
 }
@@ -38,14 +28,19 @@ const useStore = create<Store>((set) => ({
   currentLocation: null,
   setCurrentLocation: (location) => set({ currentLocation: location }),
   nearbyRestaurants: [],
-  setNearbyRestaurants: (restaurants) => set({ nearbyRestaurants: restaurants }),
+  setNearbyRestaurants: (restaurantsOrUpdater) => 
+    set((state) => ({ 
+      nearbyRestaurants: typeof restaurantsOrUpdater === 'function' 
+        ? restaurantsOrUpdater(state.nearbyRestaurants)
+        : restaurantsOrUpdater 
+    })),
   selectedRestaurant: null,
   setSelectedRestaurant: (restaurant) => set({ selectedRestaurant: restaurant }),
   filters: {
     priceLevel: [],
     cuisine: [],
     rating: 0,
-    openNow: false,
+    openNow: true,
   },
   setFilters: (filters) => set({ filters }),
 }));

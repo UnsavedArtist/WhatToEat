@@ -3,7 +3,7 @@
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { GoogleMap, useLoadScript, Libraries } from '@react-google-maps/api';
 import useStore from '@/store/useStore';
-import type { Restaurant } from '@/store/useStore';
+import type { MapRestaurant } from '@/types/map';
 import RestaurantFilters from '@/components/RestaurantFilters';
 import RestaurantList from '@/components/RestaurantList';
 import LoadingSpinner from '@/components/LoadingSpinner';
@@ -115,7 +115,8 @@ export default function MapClient() {
   // Filter restaurants
   const filteredRestaurants = useMemo(() => {
     return nearbyRestaurants.filter(restaurant => {
-      if (filters.cuisine && restaurant.cuisine.length > 0 && !restaurant.cuisine[0].includes(filters.cuisine)) return false;
+      if (filters.cuisine.length > 0 && restaurant.cuisine.length > 0 && 
+          !filters.cuisine.some(fc => restaurant.cuisine.includes(fc))) return false;
       if (filters.openNow && !restaurant.isOpen) return false;
       if (typeof filters.rating === 'number' && restaurant.rating < filters.rating) return false;
       if (typeof filters.priceLevel === 'number' && restaurant.priceLevel > filters.priceLevel) return false;
@@ -267,7 +268,7 @@ export default function MapClient() {
                         isOpen: isOperational && isCurrentlyOpen,
                       };
 
-                      setNearbyRestaurants((prev: Restaurant[]) => {
+                      setNearbyRestaurants((prev: MapRestaurant[]) => {
                         const existing = prev.find(r => r.id === restaurant.id);
                         if (existing) {
                           // Keep the first cuisine we found
