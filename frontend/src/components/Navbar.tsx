@@ -22,7 +22,7 @@ const Navbar = () => {
           {/* Left-aligned logo */}
           <Link href="/" className="flex items-center">
             <Image
-              src="/images/w2e.png"
+              src="/images/Final2.png"
               alt="What To Eat Logo"
               width={68}
               height={68}
