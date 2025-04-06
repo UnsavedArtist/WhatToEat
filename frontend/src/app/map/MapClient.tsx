@@ -2,7 +2,8 @@
 
 import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
 import { GoogleMap, useLoadScript, Libraries } from '@react-google-maps/api';
-import useStore, { Restaurant } from '@/store/useStore';
+import useStore from '@/store/useStore';
+import type { Restaurant } from '@/store/useStore';
 import RestaurantFilters from '@/components/RestaurantFilters';
 import RestaurantList from '@/components/RestaurantList';
 import LoadingSpinner from '@/components/LoadingSpinner';
