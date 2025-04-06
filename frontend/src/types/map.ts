@@ -10,4 +10,10 @@ export interface MapRestaurant {
   priceLevel: number;
   cuisine: string[];
   isOpen: boolean;
+}
+
+declare global {
+  interface Window {
+    google: typeof google;
+  }
 } 
