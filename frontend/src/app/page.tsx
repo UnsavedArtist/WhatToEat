@@ -9,11 +9,12 @@ export default function Home() {
       <section className="text-center py-20 bg-gradient-to-r from-blue-500 to-purple-600">
         <div className="flex justify-center mb-8">
           <Image
-            src="/images/W2ELogo.jpg"
+            src="/images/Final2.png"
             alt="What To Eat Logo"
-            width={120}
-            height={120}
-            className="rounded-full shadow-xl"
+            width={250}
+            height={250}
+            priority
+            quality={100}
           />
         </div>
         <h1 className="text-4xl md:text-6xl font-bold text-white mb-6">
