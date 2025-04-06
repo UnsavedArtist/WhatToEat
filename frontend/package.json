@@ -4,10 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "node switch-db.js dev && next dev",
-    "build": "prisma generate && next build",
+    "build": "node switch-db.js prod && prisma generate && next build",
     "start": "next start",
     "lint": "next lint",
-    "postinstall": "node scripts/db-generate.js"
+    "postinstall": "node switch-db.js prod && prisma generate"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^1.5.0",
