@@ -1,11 +1,16 @@
 'use client';
 
 import useStore from '@/store/useStore';
+import type { MapRestaurant } from '@/types/map';
 
-export default function RestaurantList() {
-  const { nearbyRestaurants, selectedRestaurant, setSelectedRestaurant } = useStore();
+interface RestaurantListProps {
+  restaurants: MapRestaurant[];
+}
 
-  if (nearbyRestaurants.length === 0) {
+export default function RestaurantList({ restaurants }: RestaurantListProps) {
+  const { selectedRestaurant, setSelectedRestaurant } = useStore();
+
+  if (restaurants.length === 0) {
     return (
       <div className="bg-white rounded-lg shadow-md p-4">
         <p className="text-gray-500 text-center">No restaurants found nearby.</p>
@@ -16,7 +21,7 @@ export default function RestaurantList() {
   return (
     <div className="bg-white rounded-lg shadow-md">
       <div className="max-h-[600px] overflow-y-auto">
-        {nearbyRestaurants.map((restaurant) => (
+        {restaurants.map((restaurant) => (
           <div
             key={restaurant.id}
             onClick={() => setSelectedRestaurant(restaurant)}
@@ -24,11 +29,11 @@ export default function RestaurantList() {
               selectedRestaurant?.id === restaurant.id ? 'bg-blue-50' : ''
             }`}
           >
-            <h3 className="font-semibold text-lg mb-1">{restaurant.name}</h3>
+            <h3 className="font-semibold text-lg mb-1 text-gray-900">{restaurant.name}</h3>
             <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
               <span>{restaurant.rating} ★</span>
               <span>•</span>
-              <span>{restaurant.priceLevel}</span>
+              <span>{'$'.repeat(restaurant.priceLevel)}</span>
               <span>•</span>
               <span>{restaurant.cuisine.join(', ')}</span>
             </div>
