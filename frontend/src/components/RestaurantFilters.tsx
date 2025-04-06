@@ -41,7 +41,7 @@ export default function RestaurantFilters() {
     <div className="bg-white rounded-lg shadow-md p-4 mb-4">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex justify-between items-center text-lg font-semibold mb-2"
+        className="w-full flex justify-between items-center text-lg font-semibold text-gray-800 mb-2"
         aria-expanded={isOpen}
         aria-controls="filter-panel"
       >
@@ -67,7 +67,7 @@ export default function RestaurantFilters() {
       {isOpen && (
         <div id="filter-panel" className="space-y-4">
           <div className="mb-6" role="group" aria-labelledby="price-range-label">
-            <h4 id="price-range-label" className="font-medium mb-2">Price Range</h4>
+            <h4 id="price-range-label" className="font-medium text-gray-800 mb-2">Price Range</h4>
             <div className="flex space-x-2">
               {PRICE_LEVELS.map((price) => (
                 <button
@@ -76,7 +76,7 @@ export default function RestaurantFilters() {
                   className={`flex items-center justify-center w-10 h-10 rounded-full ${
                     filters.priceLevel.includes(price)
                       ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-gray-600'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                   aria-pressed={filters.priceLevel.includes(price)}
                   aria-label={`Price level ${price}`}
@@ -92,7 +92,7 @@ export default function RestaurantFilters() {
           </div>
 
           <div role="group" aria-labelledby="cuisine-type-label">
-            <h3 id="cuisine-type-label" className="font-medium mb-2">Cuisine Type</h3>
+            <h3 id="cuisine-type-label" className="font-medium text-gray-800 mb-2">Cuisine Type</h3>
             <div className="grid grid-cols-2 gap-2">
               {CUISINE_TYPES.map((cuisine) => (
                 <button
@@ -101,7 +101,7 @@ export default function RestaurantFilters() {
                   className={`px-3 py-1 rounded-full text-sm ${
                     filters.cuisine.includes(cuisine)
                       ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 hover:bg-gray-200'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                   aria-pressed={filters.cuisine.includes(cuisine)}
                 >
@@ -112,7 +112,7 @@ export default function RestaurantFilters() {
           </div>
 
           <div className="mb-6" role="group" aria-labelledby="rating-label">
-            <h4 id="rating-label" className="font-medium mb-2">Minimum Rating</h4>
+            <h4 id="rating-label" className="font-medium text-gray-800 mb-2">Minimum Rating</h4>
             <div className="flex space-x-2">
               {RATING_LEVELS.map((rating) => (
                 <button
@@ -121,7 +121,7 @@ export default function RestaurantFilters() {
                   className={`flex items-center justify-center w-10 h-10 rounded-full ${
                     filters.rating === rating
                       ? 'bg-blue-500 text-white'
-                      : 'bg-gray-100 text-gray-600'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                   aria-pressed={filters.rating === rating}
                   aria-label={`${rating} stars`}
@@ -133,9 +133,9 @@ export default function RestaurantFilters() {
           </div>
 
           <div role="group" aria-labelledby="additional-filters-label">
-            <h4 id="additional-filters-label" className="font-medium mb-2">Additional Filters</h4>
+            <h4 id="additional-filters-label" className="font-medium text-gray-800 mb-2">Additional Filters</h4>
             <div className="flex items-center justify-between">
-              <span id="open-now-label">Open Now</span>
+              <span className="text-gray-700" id="open-now-label">Open Now</span>
               <Switch
                 checked={filters.openNow}
                 onChange={(checked) =>
