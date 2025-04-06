@@ -1,15 +1,16 @@
 'use client';
 
-import { useEffect, useCallback, useState, useRef, useMemo } from 'react';
-import { GoogleMap, useLoadScript, Libraries } from '@react-google-maps/api';
+import { useEffect, useRef, useMemo } from 'react';
+import { useLoadScript, Libraries } from '@react-google-maps/api';
 import useStore from '@/store/useStore';
 import type { MapRestaurant } from '@/types/map';
 import RestaurantFilters from '@/components/RestaurantFilters';
 import RestaurantList from '@/components/RestaurantList';
 import LoadingSpinner from '@/components/LoadingSpinner';
-import { FaMapMarkerAlt, FaUser } from 'react-icons/fa';
+import { FaMapMarkerAlt } from 'react-icons/fa';
 import { createRoot } from 'react-dom/client';
 import React from 'react';
+import { RestaurantSearchService } from '@/services/restaurantSearch';
 
 const libraries: Libraries = ['places', 'marker'] as Libraries;
 const DEBUG = false;
@@ -61,7 +62,8 @@ const mapContainerStyle = {
 };
 
 export default function MapClient() {
-  console.log('[DEBUG] MapClient rendering at:', new Date().toISOString());
+  debug('MapClient rendering at:', new Date().toISOString());
+  
   const { isLoaded, loadError } = useLoadScript({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? '',
     libraries,
@@ -83,7 +85,7 @@ export default function MapClient() {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
-  const searchInProgressRef = useRef(false);
+  const searchServiceRef = useRef<RestaurantSearchService | null>(null);
 
   // Initialize map when location is available
   useEffect(() => {
@@ -91,6 +93,7 @@ export default function MapClient() {
 
     const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID;
     if (!mapId) {
+      debug('Map ID not configured');
       console.error('Map ID is not configured. Please add NEXT_PUBLIC_GOOGLE_MAPS_ID to your .env.local file.');
       return;
     }
@@ -106,9 +109,14 @@ export default function MapClient() {
         tilt: 0,
       });
 
+      // Initialize search service
+      searchServiceRef.current = new RestaurantSearchService(mapInstanceRef.current);
+
       // Update center when location changes
       mapInstanceRef.current.setCenter(currentLocation);
+      debug('Map initialized successfully');
     } catch (error) {
+      debug('Error initializing map:', error);
       console.error('Error initializing map:', error);
     }
   }, [currentLocation]);
@@ -166,146 +174,28 @@ export default function MapClient() {
     };
   }, [filteredRestaurants, selectedRestaurant]);
 
-  const searchNearbyRestaurants = useCallback(async (location: google.maps.LatLngLiteral) => {
-    if (searchInProgressRef.current) return;
-    searchInProgressRef.current = true;
-    setNearbyRestaurants([]);
-
-    const service = new google.maps.places.PlacesService(mapInstanceRef.current!);
-
-    // Function to search for restaurants of a specific cuisine
-    const searchCuisine = async (cuisine: string) => {
-      return new Promise<void>((resolve) => {
-        const request = {
-          location,
-          radius: 1500,
-          type: 'restaurant',
-          keyword: cuisine,
-        };
-
-        service.nearbySearch(request, (results, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-            results.forEach((place) => {
-              if (place.place_id) {
-                service.getDetails(
-                  {
-                    placeId: place.place_id,
-                    fields: [
-                      'name',
-                      'geometry',
-                      'formatted_address',
-                      'rating',
-                      'price_level',
-                      'types',
-                      'opening_hours',
-                      'current_opening_hours',
-                      'business_status'
-                    ],
-                  },
-                  (detailedPlace, detailedStatus) => {
-                    if (detailedStatus === google.maps.places.PlacesServiceStatus.OK && detailedPlace) {
-                      const isOperational = detailedPlace.business_status === 'OPERATIONAL';
-                      let isCurrentlyOpen = false;
-
-                      try {
-                        if ((detailedPlace as any).current_opening_hours?.open_now) {
-                          isCurrentlyOpen = true;
-                        } else if (detailedPlace.opening_hours?.isOpen()) {
-                          isCurrentlyOpen = true;
-                        } else if (place.opening_hours?.isOpen()) {
-                          isCurrentlyOpen = true;
-                        }
-
-                        if (!isCurrentlyOpen && 
-                            isOperational && 
-                            detailedPlace.opening_hours === undefined && 
-                            (detailedPlace as any).current_opening_hours === undefined) {
-                          isCurrentlyOpen = true;
-                        }
-                      } catch (error) {
-                        isCurrentlyOpen = true;
-                      }
-
-                      // Determine the most relevant cuisine type
-                      let primaryCuisine = '';
-
-                      // First priority: exact match in name
-                      const name = detailedPlace.name?.toLowerCase() || '';
-                      const nameWords = name.split(/[\s-.,&()]+/);
-                      for (const [key, value] of Object.entries(CUISINE_TYPE_MAPPING)) {
-                        if (value && nameWords.includes(key)) {
-                          primaryCuisine = value;
-                          break;
-                        }
-                      }
-
-                      // Second priority: search keyword
-                      if (!primaryCuisine && CUISINE_TYPE_MAPPING[cuisine.toLowerCase()]) {
-                        primaryCuisine = CUISINE_TYPE_MAPPING[cuisine.toLowerCase()];
-                      }
-
-                      // Third priority: place types
-                      if (!primaryCuisine) {
-                        for (const type of detailedPlace.types || []) {
-                          const mappedType = CUISINE_TYPE_MAPPING[type.toLowerCase()];
-                          if (mappedType) {
-                            primaryCuisine = mappedType;
-                            break;
-                          }
-                        }
-                      }
-
-                      const restaurant = {
-                        id: place.place_id!,
-                        name: detailedPlace.name!,
-                        location: {
-                          lat: detailedPlace.geometry!.location!.lat(),
-                          lng: detailedPlace.geometry!.location!.lng(),
-                        },
-                        address: detailedPlace.formatted_address!,
-                        rating: detailedPlace.rating || 0,
-                        priceLevel: detailedPlace.price_level || 1,
-                        cuisine: primaryCuisine ? [primaryCuisine] : [],
-                        isOpen: isOperational && isCurrentlyOpen,
-                      };
-
-                      setNearbyRestaurants((prev: MapRestaurant[]) => {
-                        const existing = prev.find(r => r.id === restaurant.id);
-                        if (existing) {
-                          // Keep the first cuisine we found
-                          return prev.map(r => r.id === restaurant.id ? {
-                            ...restaurant,
-                            cuisine: existing.cuisine.length > 0 ? existing.cuisine : restaurant.cuisine
-                          } : r);
-                        }
-                        return [...prev, restaurant];
-                      });
-                    }
-                  }
-                );
-              }
-            });
-          }
-          resolve();
-        });
-      });
-    };
-
-    // Search for each cuisine type
-    const cuisineTypes = ['American', 'Italian', 'Chinese', 'Japanese', 'Mexican', 'Indian', 'Thai', 'Mediterranean'];
-    for (let i = 0; i < cuisineTypes.length; i += 3) {
-      const batch = cuisineTypes.slice(i, i + 3);
-      await Promise.all(batch.map(cuisine => searchCuisine(cuisine)));
-    }
-
-    searchInProgressRef.current = false;
-  }, []);
-
   // Search for restaurants when location changes
   useEffect(() => {
-    if (!mapInstanceRef.current || !currentLocation) return;
-    searchNearbyRestaurants(currentLocation);
-  }, [currentLocation, searchNearbyRestaurants]);
+    if (!mapInstanceRef.current || !currentLocation || !searchServiceRef.current) return;
+    
+    debug('Starting restaurant search');
+    setNearbyRestaurants([]);
+    searchServiceRef.current.searchNearbyRestaurants(
+      currentLocation,
+      (restaurant) => {
+        setNearbyRestaurants(prev => {
+          const existing = prev.find(r => r.id === restaurant.id);
+          if (existing) {
+            return prev.map(r => r.id === restaurant.id ? {
+              ...restaurant,
+              cuisine: existing.cuisine.length > 0 ? existing.cuisine : restaurant.cuisine
+            } : r);
+          }
+          return [...prev, restaurant];
+        });
+      }
+    );
+  }, [currentLocation]);
 
   // Get user's location
   useEffect(() => {
@@ -316,8 +206,10 @@ export default function MapClient() {
             lat: position.coords.latitude,
             lng: position.coords.longitude
           });
+          debug('User location set:', position.coords);
         },
         (error) => {
+          debug('Error getting location:', error);
           console.error('Error getting location:', error);
         }
       );
