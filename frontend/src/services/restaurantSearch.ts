@@ -1,5 +1,4 @@
 import type { MapRestaurant } from '@/types/map';
-import { DatabaseRateLimiter } from './rateLimiter';
 
 const DEBUG = true;
 
@@ -52,6 +51,28 @@ export class RestaurantSearchService {
     this.placesService = new google.maps.places.PlacesService(map);
   }
 
+  private async checkRateLimit(action: string, identifier: string): Promise<boolean> {
+    try {
+      const response = await fetch('/api/rate-limit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action, identifier }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Rate limit check failed');
+      }
+
+      const data = await response.json();
+      return data.allowed;
+    } catch (error) {
+      console.error('Rate limit check error:', error);
+      return false;
+    }
+  }
+
   async searchNearbyRestaurants(
     location: google.maps.LatLngLiteral,
     onRestaurantFound: (restaurant: MapRestaurant) => void,
@@ -62,12 +83,32 @@ export class RestaurantSearchService {
       return;
     }
 
-    // Check both hourly and daily rate limits
-    await DatabaseRateLimiter.checkHourlyLimit(userId);
-    await DatabaseRateLimiter.checkDailyLimit('global');
+    // Check both hourly and daily rate limits using the API
+    const [hourlyAllowed, dailyAllowed] = await Promise.all([
+      this.checkRateLimit('checkHourly', userId),
+      this.checkRateLimit('checkDaily', 'global'),
+    ]);
 
-    const remaining = await DatabaseRateLimiter.getRemainingRequests(userId);
-    debug(`Remaining requests - hourly: ${remaining.hourly}, daily: ${remaining.daily}`);
+    if (!hourlyAllowed || !dailyAllowed) {
+      throw new Error('Rate limit exceeded');
+    }
+
+    try {
+      const response = await fetch('/api/rate-limit', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ action: 'getRemainingRequests', identifier: userId }),
+      });
+
+      if (response.ok) {
+        const remaining = await response.json();
+        debug(`Remaining requests - hourly: ${remaining.hourly}, daily: ${remaining.daily}`);
+      }
+    } catch (error) {
+      console.error('Error checking remaining requests:', error);
+    }
 
     debug('Starting restaurant search at location:', location);
     this.searchInProgress = true;
