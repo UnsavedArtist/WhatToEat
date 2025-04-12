@@ -67,7 +67,6 @@ export class RestaurantSearchService {
         
         const request: google.maps.places.PlaceSearchRequest = {
           location,
-          radius: 1500,
           type: 'restaurant',
           keyword: cuisine,
           rankBy: google.maps.places.RankBy.DISTANCE, // Use DISTANCE as it's a valid enum value
@@ -75,10 +74,12 @@ export class RestaurantSearchService {
 
         this.placesService.nearbySearch(request, async (results, status) => {
           if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+            debug(`Found ${results.length} restaurants for cuisine ${cuisine}`);
             // Limit to top 5 results per cuisine type, sorted by rating
             const limitedResults = results
               .sort((a, b) => (b.rating || 0) - (a.rating || 0))
               .slice(0, 5);
+            debug(`Limited to top ${limitedResults.length} restaurants for cuisine ${cuisine}`);
             // Process results in smaller batches to avoid rate limiting issues
             const batchSize = 3;
             for (let i = 0; i < limitedResults.length; i += batchSize) {
@@ -150,6 +151,7 @@ export class RestaurantSearchService {
                             };
 
                             onRestaurantFound(restaurant);
+                            debug(`Added restaurant: ${restaurant.name} (${restaurant.cuisine.join(', ')})`);
                           }
                           detailsResolve();
                         }
