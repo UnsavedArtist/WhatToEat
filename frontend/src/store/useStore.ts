@@ -22,6 +22,8 @@ interface Store {
   setSelectedRestaurant: (restaurant: MapRestaurant | null) => void;
   filters: Filters;
   setFilters: (filters: Filters) => void;
+  userId: string;
+  setUserId: (id: string) => void;
 }
 
 const useStore = create<Store>((set) => ({
@@ -43,6 +45,8 @@ const useStore = create<Store>((set) => ({
     openNow: true,
   },
   setFilters: (filters) => set({ filters }),
+  userId: 'anonymous',
+  setUserId: (id) => set({ userId: id }),
 }));
 
 export default useStore; 

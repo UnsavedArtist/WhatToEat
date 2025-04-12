@@ -80,6 +80,7 @@ export default function MapClient() {
     selectedRestaurant,
     setSelectedRestaurant,
     filters,
+    userId,
   } = useStore();
 
   const mapRef = useRef<HTMLDivElement>(null);
@@ -202,16 +203,12 @@ export default function MapClient() {
       currentLocation,
       (restaurant) => {
         setNearbyRestaurants(prev => {
-          const existing = prev.find(r => r.id === restaurant.id);
-          if (existing) {
-            return prev.map(r => r.id === restaurant.id ? {
-              ...restaurant,
-              cuisine: existing.cuisine.length > 0 ? existing.cuisine : restaurant.cuisine
-            } : r);
-          }
+          // Only add if not already present
+          if (prev.some(r => r.id === restaurant.id)) return prev;
           return [...prev, restaurant];
         });
-      }
+      },
+      userId
     );
   }, [currentLocation]);
 
