@@ -1,4 +1,5 @@
 import type { MapRestaurant } from '@/types/map';
+import { DatabaseRateLimiter } from './rateLimiter';
 
 const DEBUG = true;
 
@@ -7,121 +8,6 @@ const debug = (...args: any[]) => {
     console.debug('[RestaurantSearch]', ...args);
   }
 };
-
-class GlobalDailyRateLimiter {
-  private static instance: GlobalDailyRateLimiter;
-  private requestTimes: number[] = [];
-  private readonly maxRequestsPerDay: number = 1000;
-  private readonly dayInMs: number = 24 * 60 * 60 * 1000;
-  private lastResetDate: string = new Date().toDateString();
-
-  private constructor() {
-    debug('GlobalDailyRateLimiter initialized');
-  }
-
-  static getInstance(): GlobalDailyRateLimiter {
-    if (!GlobalDailyRateLimiter.instance) {
-      GlobalDailyRateLimiter.instance = new GlobalDailyRateLimiter();
-    }
-    return GlobalDailyRateLimiter.instance;
-  }
-
-  async checkRateLimit(): Promise<void> {
-    const now = new Date();
-    const currentDate = now.toDateString();
-    
-    // Reset counter if it's a new day
-    if (currentDate !== this.lastResetDate) {
-      debug('Daily counter reset - new day started');
-      this.requestTimes = [];
-      this.lastResetDate = currentDate;
-    }
-    
-    if (this.requestTimes.length >= this.maxRequestsPerDay) {
-      const minutesUntilMidnight = Math.ceil((new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime()) / (60 * 1000));
-      debug(`Global daily limit exceeded. ${this.requestTimes.length} requests today. Reset at midnight (${minutesUntilMidnight} minutes)`);
-      throw new Error('Daily request limit reached for the website. Please try again tomorrow.');
-    }
-
-    this.requestTimes.push(now.getTime());
-    const remainingToday = this.maxRequestsPerDay - this.requestTimes.length;
-    debug(`Global request ${this.requestTimes.length}/${this.maxRequestsPerDay} today. ${remainingToday} remaining until midnight.`);
-  }
-
-  getRemainingRequests(): number {
-    const currentDate = new Date().toDateString();
-    
-    // Reset counter if it's a new day
-    if (currentDate !== this.lastResetDate) {
-      this.requestTimes = [];
-      this.lastResetDate = currentDate;
-    }
-    
-    const remaining = Math.max(0, this.maxRequestsPerDay - this.requestTimes.length);
-    debug(`${remaining} global requests remaining today`);
-    return remaining;
-  }
-}
-
-class HourlyRateLimiter {
-  private static instance: HourlyRateLimiter;
-  private requestTimes: number[] = [];
-  private readonly maxRequestsPerHour: number = 5;
-  private readonly hourInMs: number = 60 * 60 * 1000;
-
-  private constructor() {
-    debug('HourlyRateLimiter initialized');
-  }
-
-  static getInstance(): HourlyRateLimiter {
-    if (!HourlyRateLimiter.instance) {
-      HourlyRateLimiter.instance = new HourlyRateLimiter();
-    }
-    return HourlyRateLimiter.instance;
-  }
-
-  async checkRateLimit(): Promise<void> {
-    const now = Date.now();
-    const oldLength = this.requestTimes.length;
-    // Remove requests older than 1 hour
-    this.requestTimes = this.requestTimes.filter(time => now - time < this.hourInMs);
-    if (oldLength !== this.requestTimes.length) {
-      debug(`Cleaned up ${oldLength - this.requestTimes.length} expired requests`);
-    }
-    
-    if (this.requestTimes.length >= this.maxRequestsPerHour) {
-      const oldestRequest = this.requestTimes[0];
-      const timeUntilNextSlot = (oldestRequest + this.hourInMs) - now;
-      const minutesUntilNext = Math.ceil(timeUntilNextSlot / (60 * 1000));
-      debug(`Rate limit exceeded. ${this.requestTimes.length} requests in the last hour. Next available in ${minutesUntilNext} minutes`);
-      throw new Error(`Rate limit exceeded. Please try again in ${minutesUntilNext} minutes.`);
-    }
-
-    this.requestTimes.push(now);
-    debug(`Request ${this.requestTimes.length}/${this.maxRequestsPerHour} this hour. Reset in ${Math.ceil((this.hourInMs - (now - this.requestTimes[0])) / (60 * 1000))} minutes`);
-  }
-
-  getRemainingRequests(): number {
-    const now = Date.now();
-    const oldLength = this.requestTimes.length;
-    this.requestTimes = this.requestTimes.filter(time => now - time < this.hourInMs);
-    if (oldLength !== this.requestTimes.length) {
-      debug(`Cleaned up ${oldLength - this.requestTimes.length} expired requests when checking remaining`);
-    }
-    const remaining = Math.max(0, this.maxRequestsPerHour - this.requestTimes.length);
-    debug(`${remaining} requests remaining this hour`);
-    return remaining;
-  }
-
-  getTimeUntilNextRequest(): number {
-    if (this.requestTimes.length < this.maxRequestsPerHour) return 0;
-    const now = Date.now();
-    const oldestRequest = this.requestTimes[0];
-    const timeUntilNext = Math.max(0, (oldestRequest + this.hourInMs) - now);
-    debug(`Time until next available request: ${Math.ceil(timeUntilNext / (60 * 1000))} minutes`);
-    return timeUntilNext;
-  }
-}
 
 // Mapping from Google Places types to our cuisine types
 const CUISINE_TYPE_MAPPING: Record<string, string> = {
@@ -161,18 +47,17 @@ const CUISINE_TYPE_MAPPING: Record<string, string> = {
 export class RestaurantSearchService {
   private searchInProgress: boolean = false;
   private placesService: google.maps.places.PlacesService;
-  private hourlyRateLimiter: HourlyRateLimiter;
-  private globalDailyRateLimiter: GlobalDailyRateLimiter;
+  private rateLimiter: DatabaseRateLimiter;
 
   constructor(map: google.maps.Map) {
     this.placesService = new google.maps.places.PlacesService(map);
-    this.hourlyRateLimiter = HourlyRateLimiter.getInstance();
-    this.globalDailyRateLimiter = GlobalDailyRateLimiter.getInstance();
+    this.rateLimiter = DatabaseRateLimiter.getInstance();
   }
 
   async searchNearbyRestaurants(
     location: google.maps.LatLngLiteral,
-    onRestaurantFound: (restaurant: MapRestaurant) => void
+    onRestaurantFound: (restaurant: MapRestaurant) => void,
+    userId: string
   ): Promise<void> {
     if (this.searchInProgress) {
       debug('Search already in progress');
@@ -180,12 +65,11 @@ export class RestaurantSearchService {
     }
 
     // Check both hourly and daily rate limits
-    await this.hourlyRateLimiter.checkRateLimit();
-    await this.globalDailyRateLimiter.checkRateLimit();
+    await this.rateLimiter.checkHourlyLimit(userId);
+    await this.rateLimiter.checkDailyLimit();
 
-    const remainingHourly = this.hourlyRateLimiter.getRemainingRequests();
-    const remainingDaily = this.globalDailyRateLimiter.getRemainingRequests();
-    debug(`Remaining requests - hourly: ${remainingHourly}, daily: ${remainingDaily}`);
+    const remaining = await this.rateLimiter.getRemainingRequests(userId);
+    debug(`Remaining requests - hourly: ${remaining.hourly}, daily: ${remaining.daily}`);
 
     debug('Starting restaurant search at location:', location);
     this.searchInProgress = true;
