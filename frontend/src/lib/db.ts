@@ -1,13 +1,17 @@
 import { PrismaClient } from '@prisma/client';
+import getConfig from 'next/config';
 
-if (!process.env.DATABASE_URL) {
+const { serverRuntimeConfig } = getConfig();
+const databaseUrl = serverRuntimeConfig.DATABASE_URL || process.env.DATABASE_URL;
+
+if (!databaseUrl) {
   throw new Error('DATABASE_URL environment variable is not set');
 }
 
 const prisma = new PrismaClient({
   datasources: {
     db: {
-      url: process.env.DATABASE_URL,
+      url: databaseUrl,
     },
   },
 });

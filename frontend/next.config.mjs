@@ -22,6 +22,15 @@ const nextConfig = {
     // Number of pages that should be kept simultaneously without being disposed
     pagesBufferLength: 2,
   },
+  env: {
+    DATABASE_URL: process.env.DATABASE_URL,
+  },
+  serverRuntimeConfig: {
+    DATABASE_URL: process.env.DATABASE_URL,
+  },
+  publicRuntimeConfig: {
+    // Add any public runtime configs here if needed
+  },
 };
 
 export default nextConfig; 
