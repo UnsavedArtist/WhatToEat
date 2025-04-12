@@ -14,6 +14,11 @@ interface RateLimitRecord {
   last_reset: Date;
 }
 
+interface RemainingRequests {
+  hourly: number;
+  daily: number;
+}
+
 export class DatabaseRateLimiter {
   private static instance: DatabaseRateLimiter;
   private readonly hourlyLimit = 5;
@@ -22,17 +27,19 @@ export class DatabaseRateLimiter {
   private readonly dayInMs = 24 * 60 * 60 * 1000;
 
   private constructor() {
-    DatabaseRateLimiter.initializeTable().catch(console.error);
+    DatabaseRateLimiter.initializeTable().catch(error => {
+      console.error('Failed to initialize rate limits table:', error);
+    });
   }
 
-  static getInstance(): DatabaseRateLimiter {
+  public static getInstance(): DatabaseRateLimiter {
     if (!DatabaseRateLimiter.instance) {
       DatabaseRateLimiter.instance = new DatabaseRateLimiter();
     }
     return DatabaseRateLimiter.instance;
   }
 
-  private static async initializeTable() {
+  private static async initializeTable(): Promise<void> {
     await db.$executeRaw`
       CREATE TABLE IF NOT EXISTS rate_limits (
         limit_type VARCHAR(10) NOT NULL,
@@ -44,7 +51,12 @@ export class DatabaseRateLimiter {
     `;
   }
 
-  private static async checkLimit(limitType: string, identifier: string, maxRequests: number, resetHours: number) {
+  private static async checkLimit(
+    limitType: string,
+    identifier: string,
+    maxRequests: number,
+    resetHours: number
+  ): Promise<boolean> {
     await DatabaseRateLimiter.initializeTable();
 
     const now = new Date();
@@ -88,15 +100,15 @@ export class DatabaseRateLimiter {
     return true;
   }
 
-  static async checkHourlyLimit(identifier: string, maxRequests: number = 10) {
+  public static async checkHourlyLimit(identifier: string, maxRequests = 10): Promise<boolean> {
     return DatabaseRateLimiter.checkLimit('hourly', identifier, maxRequests, 1);
   }
 
-  static async checkDailyLimit(identifier: string, maxRequests: number = 100) {
+  public static async checkDailyLimit(identifier: string, maxRequests = 100): Promise<boolean> {
     return DatabaseRateLimiter.checkLimit('daily', identifier, maxRequests, 24);
   }
 
-  static async getRemainingRequests(identifier: string) {
+  public static async getRemainingRequests(identifier: string): Promise<RemainingRequests> {
     await DatabaseRateLimiter.initializeTable();
 
     const now = new Date();
@@ -109,7 +121,11 @@ export class DatabaseRateLimiter {
     const hourlyRecord = result.find(r => r.limit_type === 'hourly');
     const dailyRecord = result.find(r => r.limit_type === 'daily');
 
-    const getRemainingForRecord = (record: RateLimitRecord | undefined, maxRequests: number, resetHours: number) => {
+    const getRemainingForRecord = (
+      record: RateLimitRecord | undefined,
+      maxRequests: number,
+      resetHours: number
+    ): number => {
       if (!record) return maxRequests;
       
       const lastReset = new Date(record.last_reset);
