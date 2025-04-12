@@ -1,6 +1,6 @@
 import type { MapRestaurant } from '@/types/map';
 
-const DEBUG = false;
+const DEBUG = true;
 
 const debug = (...args: any[]) => {
   if (DEBUG) {
@@ -14,7 +14,9 @@ class HourlyRateLimiter {
   private readonly maxRequestsPerHour: number = 5;
   private readonly hourInMs: number = 60 * 60 * 1000;
 
-  private constructor() {}
+  private constructor() {
+    debug('HourlyRateLimiter initialized');
+  }
 
   static getInstance(): HourlyRateLimiter {
     if (!HourlyRateLimiter.instance) {
@@ -25,29 +27,44 @@ class HourlyRateLimiter {
 
   async checkRateLimit(): Promise<void> {
     const now = Date.now();
+    const oldLength = this.requestTimes.length;
     // Remove requests older than 1 hour
     this.requestTimes = this.requestTimes.filter(time => now - time < this.hourInMs);
+    if (oldLength !== this.requestTimes.length) {
+      debug(`Cleaned up ${oldLength - this.requestTimes.length} expired requests`);
+    }
     
     if (this.requestTimes.length >= this.maxRequestsPerHour) {
       const oldestRequest = this.requestTimes[0];
       const timeUntilNextSlot = (oldestRequest + this.hourInMs) - now;
-      throw new Error(`Rate limit exceeded. Please try again in ${Math.ceil(timeUntilNextSlot / (60 * 1000))} minutes.`);
+      const minutesUntilNext = Math.ceil(timeUntilNextSlot / (60 * 1000));
+      debug(`Rate limit exceeded. ${this.requestTimes.length} requests in the last hour. Next available in ${minutesUntilNext} minutes`);
+      throw new Error(`Rate limit exceeded. Please try again in ${minutesUntilNext} minutes.`);
     }
 
     this.requestTimes.push(now);
+    debug(`Request ${this.requestTimes.length}/${this.maxRequestsPerHour} this hour. Reset in ${Math.ceil((this.hourInMs - (now - this.requestTimes[0])) / (60 * 1000))} minutes`);
   }
 
   getRemainingRequests(): number {
     const now = Date.now();
+    const oldLength = this.requestTimes.length;
     this.requestTimes = this.requestTimes.filter(time => now - time < this.hourInMs);
-    return Math.max(0, this.maxRequestsPerHour - this.requestTimes.length);
+    if (oldLength !== this.requestTimes.length) {
+      debug(`Cleaned up ${oldLength - this.requestTimes.length} expired requests when checking remaining`);
+    }
+    const remaining = Math.max(0, this.maxRequestsPerHour - this.requestTimes.length);
+    debug(`${remaining} requests remaining this hour`);
+    return remaining;
   }
 
   getTimeUntilNextRequest(): number {
     if (this.requestTimes.length < this.maxRequestsPerHour) return 0;
     const now = Date.now();
     const oldestRequest = this.requestTimes[0];
-    return Math.max(0, (oldestRequest + this.hourInMs) - now);
+    const timeUntilNext = Math.max(0, (oldestRequest + this.hourInMs) - now);
+    debug(`Time until next available request: ${Math.ceil(timeUntilNext / (60 * 1000))} minutes`);
+    return timeUntilNext;
   }
 }
 
