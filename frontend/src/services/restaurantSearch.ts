@@ -47,11 +47,9 @@ const CUISINE_TYPE_MAPPING: Record<string, string> = {
 export class RestaurantSearchService {
   private searchInProgress: boolean = false;
   private placesService: google.maps.places.PlacesService;
-  private rateLimiter: DatabaseRateLimiter;
 
   constructor(map: google.maps.Map) {
     this.placesService = new google.maps.places.PlacesService(map);
-    this.rateLimiter = DatabaseRateLimiter.getInstance();
   }
 
   async searchNearbyRestaurants(
@@ -65,10 +63,10 @@ export class RestaurantSearchService {
     }
 
     // Check both hourly and daily rate limits
-    await this.rateLimiter.checkHourlyLimit(userId);
-    await this.rateLimiter.checkDailyLimit();
+    await DatabaseRateLimiter.checkHourlyLimit(userId);
+    await DatabaseRateLimiter.checkDailyLimit('global');
 
-    const remaining = await this.rateLimiter.getRemainingRequests(userId);
+    const remaining = await DatabaseRateLimiter.getRemainingRequests(userId);
     debug(`Remaining requests - hourly: ${remaining.hourly}, daily: ${remaining.daily}`);
 
     debug('Starting restaurant search at location:', location);
