@@ -8,6 +8,12 @@ const debug = (...args: any[]) => {
   }
 };
 
+interface RateLimitRecord {
+  limit_type: string;
+  request_count: number;
+  last_reset: Date;
+}
+
 export class DatabaseRateLimiter {
   private static instance: DatabaseRateLimiter;
   private readonly hourlyLimit = 5;
@@ -26,132 +32,96 @@ export class DatabaseRateLimiter {
     return DatabaseRateLimiter.instance;
   }
 
-  private async initializeTable() {
-    try {
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS rate_limits (
-          id SERIAL PRIMARY KEY,
-          limit_type VARCHAR(50) NOT NULL,
-          identifier VARCHAR(255),
-          request_count INTEGER DEFAULT 0,
-          last_reset TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-          UNIQUE(limit_type, identifier)
-        )
-      `);
-      debug('Rate limits table initialized');
-    } catch (error) {
-      console.error('Error initializing rate limits table:', error);
-    }
+  private static async initializeTable() {
+    await db.$executeRaw`
+      CREATE TABLE IF NOT EXISTS rate_limits (
+        limit_type VARCHAR(10) NOT NULL,
+        identifier VARCHAR(255) NOT NULL,
+        request_count INTEGER DEFAULT 0,
+        last_reset TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (limit_type, identifier)
+      )
+    `;
   }
 
-  async checkHourlyLimit(userId: string): Promise<void> {
+  private static async checkLimit(limitType: string, identifier: string, maxRequests: number, resetHours: number) {
+    await DatabaseRateLimiter.initializeTable();
+
     const now = new Date();
-    const hourAgo = new Date(now.getTime() - this.hourInMs);
+    const result = await db.$queryRaw<RateLimitRecord[]>`
+      SELECT request_count, last_reset
+      FROM rate_limits
+      WHERE limit_type = ${limitType} AND identifier = ${identifier}
+    `;
 
-    // Get or create hourly limit record
-    const result = await db.query(
-      `INSERT INTO rate_limits (limit_type, identifier, request_count, last_reset)
-       VALUES ($1, $2, 1, $3)
-       ON CONFLICT (limit_type, identifier)
-       DO UPDATE SET
-         request_count = CASE
-           WHEN rate_limits.last_reset < $4
-           THEN 1
-           ELSE rate_limits.request_count + 1
-         END,
-         last_reset = CASE
-           WHEN rate_limits.last_reset < $4
-           THEN $3
-           ELSE rate_limits.last_reset
-         END
-       RETURNING request_count, last_reset`,
-      ['hourly_user', userId, now, hourAgo]
-    );
-
-    const { request_count, last_reset } = result.rows[0];
-    debug(`User ${userId} has made ${request_count} requests in the last hour`);
-
-    if (request_count > this.hourlyLimit) {
-      const resetTime = new Date(last_reset).getTime() + this.hourInMs;
-      const minutesUntilReset = Math.ceil((resetTime - now.getTime()) / (60 * 1000));
-      throw new Error(`Rate limit exceeded. Please try again in ${minutesUntilReset} minutes.`);
+    const record = result[0];
+    
+    if (!record) {
+      await db.$executeRaw`
+        INSERT INTO rate_limits (limit_type, identifier, request_count, last_reset)
+        VALUES (${limitType}, ${identifier}, 1, ${now})
+      `;
+      return true;
     }
+
+    const lastReset = new Date(record.last_reset);
+    const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
+
+    if (hoursSinceReset >= resetHours) {
+      await db.$executeRaw`
+        UPDATE rate_limits
+        SET request_count = 1, last_reset = ${now}
+        WHERE limit_type = ${limitType} AND identifier = ${identifier}
+      `;
+      return true;
+    }
+
+    if (record.request_count >= maxRequests) {
+      return false;
+    }
+
+    await db.$executeRaw`
+      UPDATE rate_limits
+      SET request_count = request_count + 1
+      WHERE limit_type = ${limitType} AND identifier = ${identifier}
+    `;
+    return true;
   }
 
-  async checkDailyLimit(): Promise<void> {
-    const now = new Date();
-    const startOfDay = new Date(now);
-    startOfDay.setHours(0, 0, 0, 0);
-
-    // Get or create daily limit record
-    const result = await db.query(
-      `INSERT INTO rate_limits (limit_type, identifier, request_count, last_reset)
-       VALUES ($1, $2, 1, $3)
-       ON CONFLICT (limit_type, identifier)
-       DO UPDATE SET
-         request_count = CASE
-           WHEN rate_limits.last_reset < $4
-           THEN 1
-           ELSE rate_limits.request_count + 1
-         END,
-         last_reset = CASE
-           WHEN rate_limits.last_reset < $4
-           THEN $3
-           ELSE rate_limits.last_reset
-         END
-       RETURNING request_count, last_reset`,
-      ['daily_global', 'global', startOfDay, startOfDay]
-    );
-
-    const { request_count } = result.rows[0];
-    debug(`Global daily requests: ${request_count}/${this.dailyLimit}`);
-
-    if (request_count > this.dailyLimit) {
-      const minutesUntilMidnight = Math.ceil(
-        (new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime() - now.getTime()) / (60 * 1000)
-      );
-      throw new Error(`Daily request limit reached for the website. Please try again in ${minutesUntilMidnight} minutes.`);
-    }
+  static async checkHourlyLimit(identifier: string, maxRequests: number = 10) {
+    return DatabaseRateLimiter.checkLimit('hourly', identifier, maxRequests, 1);
   }
 
-  async getRemainingRequests(userId: string): Promise<{ hourly: number; daily: number }> {
+  static async checkDailyLimit(identifier: string, maxRequests: number = 100) {
+    return DatabaseRateLimiter.checkLimit('daily', identifier, maxRequests, 24);
+  }
+
+  static async getRemainingRequests(identifier: string) {
+    await DatabaseRateLimiter.initializeTable();
+
     const now = new Date();
-    const hourAgo = new Date(now.getTime() - this.hourInMs);
-    const startOfDay = new Date(now);
-    startOfDay.setHours(0, 0, 0, 0);
+    const result = await db.$queryRaw<RateLimitRecord[]>`
+      SELECT limit_type, request_count, last_reset
+      FROM rate_limits
+      WHERE identifier = ${identifier}
+    `;
 
-    // Get hourly requests
-    const hourlyResult = await db.query(
-      `SELECT request_count, last_reset
-       FROM rate_limits
-       WHERE limit_type = $1
-       AND identifier = $2`,
-      ['hourly_user', userId]
-    );
+    const hourlyRecord = result.find(r => r.limit_type === 'hourly');
+    const dailyRecord = result.find(r => r.limit_type === 'daily');
 
-    const hourlyCount = hourlyResult.rows.length > 0 && 
-      new Date(hourlyResult.rows[0].last_reset) > hourAgo ? 
-      hourlyResult.rows[0].request_count : 0;
-
-    // Get daily requests
-    const dailyResult = await db.query(
-      `SELECT request_count, last_reset
-       FROM rate_limits
-       WHERE limit_type = $1
-       AND identifier = $2`,
-      ['daily_global', 'global']
-    );
-
-    const dailyCount = dailyResult.rows.length > 0 && 
-      new Date(dailyResult.rows[0].last_reset) > startOfDay ? 
-      dailyResult.rows[0].request_count : 0;
-
-    const remaining = {
-      hourly: Math.max(0, this.hourlyLimit - hourlyCount),
-      daily: Math.max(0, this.dailyLimit - dailyCount)
+    const getRemainingForRecord = (record: RateLimitRecord | undefined, maxRequests: number, resetHours: number) => {
+      if (!record) return maxRequests;
+      
+      const lastReset = new Date(record.last_reset);
+      const hoursSinceReset = (now.getTime() - lastReset.getTime()) / (1000 * 60 * 60);
+      
+      if (hoursSinceReset >= resetHours) return maxRequests;
+      return Math.max(0, maxRequests - record.request_count);
     };
 
-    debug(`Remaining requests - hourly: ${remaining.hourly}, daily: ${remaining.daily}`);
-    return remaining;
+    return {
+      hourly: getRemainingForRecord(hourlyRecord, 10, 1),
+      daily: getRemainingForRecord(dailyRecord, 100, 24)
+    };
   }
 } 

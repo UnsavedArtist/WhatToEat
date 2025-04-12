@@ -1,14 +1,15 @@
-import { Pool } from 'pg';
+import { PrismaClient } from '@prisma/client';
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is not set');
 }
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+const prisma = new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL,
+    },
+  },
 });
 
-export const db = {
-  query: (text: string, params?: any[]) => pool.query(text, params)
-}; 
+export { prisma as db }; 
