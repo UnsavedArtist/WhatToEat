@@ -131,74 +131,51 @@ export class RestaurantSearchService {
               .slice(0, 20);
             debug(`Limited to top ${limitedResults.length} restaurants`);
 
-            // Process all results at once since we're only making one API call
-            await Promise.all(limitedResults.map(async (place) => {
-              const placeId = place.place_id;
-              if (placeId) {
-                return new Promise<void>((detailsResolve) => {
-                  this.placesService.getDetails(
-                    {
-                      placeId: placeId,
-                      fields: [
-                        'name',
-                        'geometry',
-                        'formatted_address',
-                        'rating',
-                        'price_level',
-                        'types',
-                        'business_status'
-                      ],
-                    },
-                    (detailedPlace, detailedStatus) => {
-                      if (detailedStatus === google.maps.places.PlacesServiceStatus.OK && detailedPlace) {
-                        const isOperational = detailedPlace.business_status === 'OPERATIONAL';
-                        const isCurrentlyOpen = isOperational;
+            // Process results directly from nearbySearch to avoid additional API calls
+            limitedResults.forEach((place) => {
+              if (!place.place_id) return;
 
-                        // Determine cuisine type from place types
-                        let primaryCuisine = '';
-                        for (const type of detailedPlace.types || []) {
-                          const mappedType = CUISINE_TYPE_MAPPING[type.toLowerCase()];
-                          if (mappedType) {
-                            primaryCuisine = mappedType;
-                            break;
-                          }
-                        }
-
-                        // If no cuisine found from types, try name matching
-                        if (!primaryCuisine) {
-                          const name = detailedPlace.name?.toLowerCase() || '';
-                          const nameWords = name.split(/[\s-.,&()]+/);
-                          for (const [key, value] of Object.entries(CUISINE_TYPE_MAPPING)) {
-                            if (value && nameWords.includes(key)) {
-                              primaryCuisine = value;
-                              break;
-                            }
-                          }
-                        }
-
-                        const restaurant = {
-                          id: placeId,
-                          name: detailedPlace.name!,
-                          location: {
-                            lat: detailedPlace.geometry!.location!.lat(),
-                            lng: detailedPlace.geometry!.location!.lng(),
-                          },
-                          address: detailedPlace.formatted_address!,
-                          rating: detailedPlace.rating || 0,
-                          priceLevel: detailedPlace.price_level || 1,
-                          cuisine: primaryCuisine ? [primaryCuisine] : [],
-                          isOpen: isOperational && isCurrentlyOpen,
-                        };
-
-                        onRestaurantFound(restaurant);
-                        debug(`Added restaurant: ${restaurant.name} (${restaurant.cuisine.join(', ')})`);
-                      }
-                      detailsResolve();
-                    }
-                  );
-                });
+              // Determine cuisine type from place types
+              let primaryCuisine = '';
+              if (place.types) {
+                for (const type of place.types) {
+                  const mappedType = CUISINE_TYPE_MAPPING[type.toLowerCase()];
+                  if (mappedType) {
+                    primaryCuisine = mappedType;
+                    break;
+                  }
+                }
               }
-            }));
+
+              // If no cuisine found from types, try name matching
+              if (!primaryCuisine && place.name) {
+                const name = place.name.toLowerCase();
+                const nameWords = name.split(/[\s-.,&()]+/);
+                for (const [key, value] of Object.entries(CUISINE_TYPE_MAPPING)) {
+                  if (value && nameWords.includes(key)) {
+                    primaryCuisine = value;
+                    break;
+                  }
+                }
+              }
+
+              const restaurant: MapRestaurant = {
+                id: place.place_id,
+                name: place.name || 'Unknown Restaurant',
+                location: {
+                  lat: place.geometry?.location?.lat() || 0,
+                  lng: place.geometry?.location?.lng() || 0,
+                },
+                address: place.vicinity || '',
+                rating: place.rating || 0,
+                priceLevel: place.price_level || 1,
+                cuisine: primaryCuisine ? [primaryCuisine] : [],
+                isOpen: place.business_status === 'OPERATIONAL',
+              };
+
+              onRestaurantFound(restaurant);
+              debug(`Added restaurant: ${restaurant.name} (${restaurant.cuisine.join(', ')})`);
+            });
           }
           resolve();
         });
