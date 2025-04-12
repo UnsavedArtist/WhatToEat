@@ -1,19 +1,23 @@
 import { PrismaClient } from '@prisma/client';
-import getConfig from 'next/config';
 
-const { serverRuntimeConfig } = getConfig();
-const databaseUrl = serverRuntimeConfig.DATABASE_URL || process.env.DATABASE_URL;
-
-if (!databaseUrl) {
-  throw new Error('DATABASE_URL environment variable is not set');
+// For development, you can log the DATABASE_URL to debug
+if (process.env.NODE_ENV !== 'production') {
+  console.log('Database URL status:', !!process.env.DATABASE_URL);
 }
 
-const prisma = new PrismaClient({
-  datasources: {
-    db: {
-      url: databaseUrl,
-    },
-  },
-});
+// In production, we want to reuse connections
+let prisma: PrismaClient;
+
+if (process.env.NODE_ENV === 'production') {
+  prisma = new PrismaClient();
+} else {
+  // @ts-ignore
+  if (!global.prisma) {
+    // @ts-ignore
+    global.prisma = new PrismaClient();
+  }
+  // @ts-ignore
+  prisma = global.prisma;
+}
 
 export { prisma as db }; 
