@@ -5,19 +5,12 @@ if (process.env.NODE_ENV !== 'production') {
   console.log('Database URL status:', !!process.env.DATABASE_URL);
 }
 
-// In production, we want to reuse connections
-let prisma: PrismaClient;
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined;
+};
 
-if (process.env.NODE_ENV === 'production') {
-  prisma = new PrismaClient();
-} else {
-  // @ts-ignore
-  if (!global.prisma) {
-    // @ts-ignore
-    global.prisma = new PrismaClient();
-  }
-  // @ts-ignore
-  prisma = global.prisma;
-}
+export const db = globalForPrisma.prisma ?? new PrismaClient();
 
-export { prisma as db }; 
+if (process.env.NODE_ENV !== 'production') {
+  globalForPrisma.prisma = db;
+} 
