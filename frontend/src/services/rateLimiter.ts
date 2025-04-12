@@ -22,7 +22,7 @@ export class DatabaseRateLimiter {
   private readonly dayInMs = 24 * 60 * 60 * 1000;
 
   private constructor() {
-    this.initializeTable().catch(console.error);
+    DatabaseRateLimiter.initializeTable().catch(console.error);
   }
 
   static getInstance(): DatabaseRateLimiter {
