@@ -1,5 +1,4 @@
-import { db } from '@/lib/db';
-import { sql } from '@vercel/postgres';
+import { db } from '../lib/db';
 
 const DEBUG = true;
 
@@ -29,7 +28,7 @@ export class DatabaseRateLimiter {
 
   private async initializeTable() {
     try {
-      await sql`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS rate_limits (
           id SERIAL PRIMARY KEY,
           limit_type VARCHAR(50) NOT NULL,
@@ -38,7 +37,7 @@ export class DatabaseRateLimiter {
           last_reset TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
           UNIQUE(limit_type, identifier)
         )
-      `;
+      `);
       debug('Rate limits table initialized');
     } catch (error) {
       console.error('Error initializing rate limits table:', error);
@@ -50,23 +49,24 @@ export class DatabaseRateLimiter {
     const hourAgo = new Date(now.getTime() - this.hourInMs);
 
     // Get or create hourly limit record
-    const result = await sql`
-      INSERT INTO rate_limits (limit_type, identifier, request_count, last_reset)
-      VALUES ('hourly_user', ${userId}, 1, ${now})
-      ON CONFLICT (limit_type, identifier)
-      DO UPDATE SET
-        request_count = CASE
-          WHEN rate_limits.last_reset < ${hourAgo}
-          THEN 1
-          ELSE rate_limits.request_count + 1
-        END,
-        last_reset = CASE
-          WHEN rate_limits.last_reset < ${hourAgo}
-          THEN ${now}
-          ELSE rate_limits.last_reset
-        END
-      RETURNING request_count, last_reset
-    `;
+    const result = await db.query(
+      `INSERT INTO rate_limits (limit_type, identifier, request_count, last_reset)
+       VALUES ($1, $2, 1, $3)
+       ON CONFLICT (limit_type, identifier)
+       DO UPDATE SET
+         request_count = CASE
+           WHEN rate_limits.last_reset < $4
+           THEN 1
+           ELSE rate_limits.request_count + 1
+         END,
+         last_reset = CASE
+           WHEN rate_limits.last_reset < $4
+           THEN $3
+           ELSE rate_limits.last_reset
+         END
+       RETURNING request_count, last_reset`,
+      ['hourly_user', userId, now, hourAgo]
+    );
 
     const { request_count, last_reset } = result.rows[0];
     debug(`User ${userId} has made ${request_count} requests in the last hour`);
@@ -84,23 +84,24 @@ export class DatabaseRateLimiter {
     startOfDay.setHours(0, 0, 0, 0);
 
     // Get or create daily limit record
-    const result = await sql`
-      INSERT INTO rate_limits (limit_type, identifier, request_count, last_reset)
-      VALUES ('daily_global', 'global', 1, ${startOfDay})
-      ON CONFLICT (limit_type, identifier)
-      DO UPDATE SET
-        request_count = CASE
-          WHEN rate_limits.last_reset < ${startOfDay}
-          THEN 1
-          ELSE rate_limits.request_count + 1
-        END,
-        last_reset = CASE
-          WHEN rate_limits.last_reset < ${startOfDay}
-          THEN ${startOfDay}
-          ELSE rate_limits.last_reset
-        END
-      RETURNING request_count, last_reset
-    `;
+    const result = await db.query(
+      `INSERT INTO rate_limits (limit_type, identifier, request_count, last_reset)
+       VALUES ($1, $2, 1, $3)
+       ON CONFLICT (limit_type, identifier)
+       DO UPDATE SET
+         request_count = CASE
+           WHEN rate_limits.last_reset < $4
+           THEN 1
+           ELSE rate_limits.request_count + 1
+         END,
+         last_reset = CASE
+           WHEN rate_limits.last_reset < $4
+           THEN $3
+           ELSE rate_limits.last_reset
+         END
+       RETURNING request_count, last_reset`,
+      ['daily_global', 'global', startOfDay, startOfDay]
+    );
 
     const { request_count } = result.rows[0];
     debug(`Global daily requests: ${request_count}/${this.dailyLimit}`);
@@ -120,24 +121,26 @@ export class DatabaseRateLimiter {
     startOfDay.setHours(0, 0, 0, 0);
 
     // Get hourly requests
-    const hourlyResult = await sql`
-      SELECT request_count, last_reset
-      FROM rate_limits
-      WHERE limit_type = 'hourly_user'
-      AND identifier = ${userId}
-    `;
+    const hourlyResult = await db.query(
+      `SELECT request_count, last_reset
+       FROM rate_limits
+       WHERE limit_type = $1
+       AND identifier = $2`,
+      ['hourly_user', userId]
+    );
 
     const hourlyCount = hourlyResult.rows.length > 0 && 
       new Date(hourlyResult.rows[0].last_reset) > hourAgo ? 
       hourlyResult.rows[0].request_count : 0;
 
     // Get daily requests
-    const dailyResult = await sql`
-      SELECT request_count, last_reset
-      FROM rate_limits
-      WHERE limit_type = 'daily_global'
-      AND identifier = 'global'
-    `;
+    const dailyResult = await db.query(
+      `SELECT request_count, last_reset
+       FROM rate_limits
+       WHERE limit_type = $1
+       AND identifier = $2`,
+      ['daily_global', 'global']
+    );
 
     const dailyCount = dailyResult.rows.length > 0 && 
       new Date(dailyResult.rows[0].last_reset) > startOfDay ? 
