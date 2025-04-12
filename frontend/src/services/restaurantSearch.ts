@@ -1,5 +1,4 @@
 import type { MapRestaurant } from '@/types/map';
-import { RateLimiter } from './rateLimiter';
 
 const DEBUG = false;
 
@@ -8,6 +7,49 @@ const debug = (...args: any[]) => {
     console.debug('[RestaurantSearch]', ...args);
   }
 };
+
+class HourlyRateLimiter {
+  private static instance: HourlyRateLimiter;
+  private requestTimes: number[] = [];
+  private readonly maxRequestsPerHour: number = 5;
+  private readonly hourInMs: number = 60 * 60 * 1000;
+
+  private constructor() {}
+
+  static getInstance(): HourlyRateLimiter {
+    if (!HourlyRateLimiter.instance) {
+      HourlyRateLimiter.instance = new HourlyRateLimiter();
+    }
+    return HourlyRateLimiter.instance;
+  }
+
+  async checkRateLimit(): Promise<void> {
+    const now = Date.now();
+    // Remove requests older than 1 hour
+    this.requestTimes = this.requestTimes.filter(time => now - time < this.hourInMs);
+    
+    if (this.requestTimes.length >= this.maxRequestsPerHour) {
+      const oldestRequest = this.requestTimes[0];
+      const timeUntilNextSlot = (oldestRequest + this.hourInMs) - now;
+      throw new Error(`Rate limit exceeded. Please try again in ${Math.ceil(timeUntilNextSlot / (60 * 1000))} minutes.`);
+    }
+
+    this.requestTimes.push(now);
+  }
+
+  getRemainingRequests(): number {
+    const now = Date.now();
+    this.requestTimes = this.requestTimes.filter(time => now - time < this.hourInMs);
+    return Math.max(0, this.maxRequestsPerHour - this.requestTimes.length);
+  }
+
+  getTimeUntilNextRequest(): number {
+    if (this.requestTimes.length < this.maxRequestsPerHour) return 0;
+    const now = Date.now();
+    const oldestRequest = this.requestTimes[0];
+    return Math.max(0, (oldestRequest + this.hourInMs) - now);
+  }
+}
 
 // Mapping from Google Places types to our cuisine types
 const CUISINE_TYPE_MAPPING: Record<string, string> = {
@@ -47,133 +89,11 @@ const CUISINE_TYPE_MAPPING: Record<string, string> = {
 export class RestaurantSearchService {
   private searchInProgress: boolean = false;
   private placesService: google.maps.places.PlacesService;
-  private rateLimiter: RateLimiter;
+  private hourlyRateLimiter: HourlyRateLimiter;
 
   constructor(map: google.maps.Map) {
     this.placesService = new google.maps.places.PlacesService(map);
-    // Set a conservative limit of 500 requests per day to stay well under the free tier
-    this.rateLimiter = new RateLimiter(500);
-  }
-
-  private async searchCuisine(
-    location: google.maps.LatLngLiteral, 
-    cuisine: string,
-    onRestaurantFound: (restaurant: MapRestaurant) => void
-  ): Promise<void> {
-    return new Promise<void>(async (resolve) => {
-      try {
-        // Rate limit check for nearbySearch
-        await this.rateLimiter.waitForAvailability();
-        
-        const request: google.maps.places.PlaceSearchRequest = {
-          location,
-          type: 'restaurant',
-          keyword: cuisine,
-          rankBy: google.maps.places.RankBy.DISTANCE, // Use DISTANCE as it's a valid enum value
-        };
-
-        this.placesService.nearbySearch(request, async (results, status) => {
-          if (status === google.maps.places.PlacesServiceStatus.OK && results) {
-            debug(`Found ${results.length} restaurants for cuisine ${cuisine}`);
-            // Limit to top 5 results per cuisine type, sorted by rating
-            const limitedResults = results
-              .sort((a, b) => (b.rating || 0) - (a.rating || 0))
-              .slice(0, 5);
-            debug(`Limited to top ${limitedResults.length} restaurants for cuisine ${cuisine}`);
-            // Process results in smaller batches to avoid rate limiting issues
-            const batchSize = 3;
-            for (let i = 0; i < limitedResults.length; i += batchSize) {
-              const batch = limitedResults.slice(i, i + batchSize);
-              await Promise.all(batch.map(async (place) => {
-                const placeId = place.place_id;
-                if (placeId) {
-                  try {
-                    // Rate limit check for getDetails
-                    await this.rateLimiter.waitForAvailability();
-
-                    return new Promise<void>((detailsResolve) => {
-                      this.placesService.getDetails(
-                        {
-                          placeId: placeId,
-                          fields: [
-                            'name',
-                            'geometry',
-                            'formatted_address',
-                            'rating',
-                            'price_level',
-                            'types',
-                            'business_status'
-                          ],
-                        },
-                        (detailedPlace, detailedStatus) => {
-                          if (detailedStatus === google.maps.places.PlacesServiceStatus.OK && detailedPlace) {
-                            const isOperational = detailedPlace.business_status === 'OPERATIONAL';
-                            // Assume open if operational since we're not fetching detailed hours to save on API costs
-                            const isCurrentlyOpen = isOperational;
-
-                            let primaryCuisine = '';
-                            const name = detailedPlace.name?.toLowerCase() || '';
-                            const nameWords = name.split(/[\s-.,&()]+/);
-                            
-                            for (const [key, value] of Object.entries(CUISINE_TYPE_MAPPING)) {
-                              if (value && nameWords.includes(key)) {
-                                primaryCuisine = value;
-                                break;
-                              }
-                            }
-
-                            if (!primaryCuisine && CUISINE_TYPE_MAPPING[cuisine.toLowerCase()]) {
-                              primaryCuisine = CUISINE_TYPE_MAPPING[cuisine.toLowerCase()];
-                            }
-
-                            if (!primaryCuisine) {
-                              for (const type of detailedPlace.types || []) {
-                                const mappedType = CUISINE_TYPE_MAPPING[type.toLowerCase()];
-                                if (mappedType) {
-                                  primaryCuisine = mappedType;
-                                  break;
-                                }
-                              }
-                            }
-
-                            const restaurant = {
-                              id: placeId!,
-                              name: detailedPlace.name!,
-                              location: {
-                                lat: detailedPlace.geometry!.location!.lat(),
-                                lng: detailedPlace.geometry!.location!.lng(),
-                              },
-                              address: detailedPlace.formatted_address!,
-                              rating: detailedPlace.rating || 0,
-                              priceLevel: detailedPlace.price_level || 1,
-                              cuisine: primaryCuisine ? [primaryCuisine] : [],
-                              isOpen: isOperational && isCurrentlyOpen,
-                            };
-
-                            onRestaurantFound(restaurant);
-                            debug(`Added restaurant: ${restaurant.name} (${restaurant.cuisine.join(', ')})`);
-                          }
-                          detailsResolve();
-                        }
-                      );
-                    });
-                  } catch (error) {
-                    debug('Rate limit reached during details fetch:', error);
-                  }
-                }
-              }));
-              
-              // Add a small delay between batches to avoid overwhelming the API
-              await new Promise(r => setTimeout(r, 200));
-            }
-          }
-          resolve();
-        });
-      } catch (error) {
-        debug('Rate limit reached during nearby search:', error);
-        resolve();
-      }
-    });
+    this.hourlyRateLimiter = HourlyRateLimiter.getInstance();
   }
 
   async searchNearbyRestaurants(
@@ -185,25 +105,104 @@ export class RestaurantSearchService {
       return;
     }
 
-    const remainingRequests = this.rateLimiter.getRemainingRequests();
-    if (remainingRequests < 10) {
-      throw new Error(`API rate limit nearly reached. Only ${remainingRequests} requests remaining. Please try again later.`);
-    }
+    // Check hourly rate limit
+    await this.hourlyRateLimiter.checkRateLimit();
+
+    const remainingRequests = this.hourlyRateLimiter.getRemainingRequests();
+    debug(`Remaining requests this hour: ${remainingRequests}`);
 
     debug('Starting restaurant search at location:', location);
     this.searchInProgress = true;
 
     try {
-      // Search for each cuisine type in smaller batches
-      const cuisineTypes = ['American', 'Italian', 'Chinese', 'Japanese', 'Mexican', 'Indian', 'Thai', 'Mediterranean'];
-      for (let i = 0; i < cuisineTypes.length; i += 2) { // Reduced batch size from 3 to 2
-        const batch = cuisineTypes.slice(i, i + 2);
-        await Promise.all(batch.map(cuisine => this.searchCuisine(location, cuisine, onRestaurantFound)));
-        // Add delay between cuisine type batches
-        if (i + 2 < cuisineTypes.length) {
-          await new Promise(r => setTimeout(r, 500));
-        }
-      }
+      const request: google.maps.places.PlaceSearchRequest = {
+        location,
+        type: 'restaurant',
+        rankBy: google.maps.places.RankBy.DISTANCE,
+      };
+
+      await new Promise<void>((resolve) => {
+        this.placesService.nearbySearch(request, async (results, status) => {
+          if (status === google.maps.places.PlacesServiceStatus.OK && results) {
+            debug(`Found ${results.length} restaurants`);
+            // Limit to top 20 results, sorted by rating
+            const limitedResults = results
+              .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+              .slice(0, 20);
+            debug(`Limited to top ${limitedResults.length} restaurants`);
+
+            // Process all results at once since we're only making one API call
+            await Promise.all(limitedResults.map(async (place) => {
+              const placeId = place.place_id;
+              if (placeId) {
+                return new Promise<void>((detailsResolve) => {
+                  this.placesService.getDetails(
+                    {
+                      placeId: placeId,
+                      fields: [
+                        'name',
+                        'geometry',
+                        'formatted_address',
+                        'rating',
+                        'price_level',
+                        'types',
+                        'business_status'
+                      ],
+                    },
+                    (detailedPlace, detailedStatus) => {
+                      if (detailedStatus === google.maps.places.PlacesServiceStatus.OK && detailedPlace) {
+                        const isOperational = detailedPlace.business_status === 'OPERATIONAL';
+                        const isCurrentlyOpen = isOperational;
+
+                        // Determine cuisine type from place types
+                        let primaryCuisine = '';
+                        for (const type of detailedPlace.types || []) {
+                          const mappedType = CUISINE_TYPE_MAPPING[type.toLowerCase()];
+                          if (mappedType) {
+                            primaryCuisine = mappedType;
+                            break;
+                          }
+                        }
+
+                        // If no cuisine found from types, try name matching
+                        if (!primaryCuisine) {
+                          const name = detailedPlace.name?.toLowerCase() || '';
+                          const nameWords = name.split(/[\s-.,&()]+/);
+                          for (const [key, value] of Object.entries(CUISINE_TYPE_MAPPING)) {
+                            if (value && nameWords.includes(key)) {
+                              primaryCuisine = value;
+                              break;
+                            }
+                          }
+                        }
+
+                        const restaurant = {
+                          id: placeId,
+                          name: detailedPlace.name!,
+                          location: {
+                            lat: detailedPlace.geometry!.location!.lat(),
+                            lng: detailedPlace.geometry!.location!.lng(),
+                          },
+                          address: detailedPlace.formatted_address!,
+                          rating: detailedPlace.rating || 0,
+                          priceLevel: detailedPlace.price_level || 1,
+                          cuisine: primaryCuisine ? [primaryCuisine] : [],
+                          isOpen: isOperational && isCurrentlyOpen,
+                        };
+
+                        onRestaurantFound(restaurant);
+                        debug(`Added restaurant: ${restaurant.name} (${restaurant.cuisine.join(', ')})`);
+                      }
+                      detailsResolve();
+                    }
+                  );
+                });
+              }
+            }));
+          }
+          resolve();
+        });
+      });
     } catch (error) {
       console.error('Error searching for restaurants:', error);
       throw error;
